@@ -49,7 +49,7 @@ public:
     // Setters
     void setPasswordOk(bool ok) { _password_ok = ok; }
     void setNickname(const std::string& nick);
-    void setUsername(const std::string& user) { _username = user; }
+    void setUsername(const std::string& user);
     void setRealname(const std::string& real) { _realname = real; }
     void setHostname(const std::string& host) { _hostname = host; }
     

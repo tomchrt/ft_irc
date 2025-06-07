@@ -1,16 +1,13 @@
 #include "Server.hpp"
 #include "Client.hpp"
+#include "Channel.hpp"
+#include "commands/AuthCommands.hpp"
+#include "commands/ChannelCommands.hpp"
+#include "commands/MessageCommands.hpp"
 #include <stdexcept>
 #include <cstring>    // pour strerror
 #include <cerrno>     // pour errno
-#include <sstream>    // CORRIGÉ: ajouté pour ostringstream
-
-// Fonction utilitaire C++98 pour convertir int en string
-std::string intToString(int value) {
-    std::ostringstream oss;
-    oss << value;
-    return oss.str();
-}
+#include "utils.hpp"  // pour intToString
 
 // Constructeur : initialise le serveur avec port et password
 Server::Server(int port, const std::string& password) 
@@ -48,6 +45,12 @@ Server::~Server() {
     }
     _clients.clear();
     
+    // Supprimer tous les channels
+    for (std::map<std::string, Channel*>::iterator it = _channels.begin(); it != _channels.end(); ++it) {
+        delete it->second;
+    }
+    _channels.clear();
+    
     // Fermer le socket serveur
     if (_server_fd != -1) {
         close(_server_fd);
@@ -65,14 +68,12 @@ void Server::_setupSocket() {
     }
     
     // Option SO_REUSEADDR : permet de réutiliser l'adresse immédiatement
-    // Évite l'erreur "Address already in use" après redémarrage
     int opt = 1;
     if (setsockopt(_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         throw std::runtime_error("Failed to set SO_REUSEADDR: " + std::string(strerror(errno)));
     }
     
     // Configurer le socket en mode non-bloquant
-    // F_SETFL = Set File status fLags, O_NONBLOCK = non-bloquant
     if (fcntl(_server_fd, F_SETFL, O_NONBLOCK) < 0) {
         throw std::runtime_error("Failed to set non-blocking mode: " + std::string(strerror(errno)));
     }
@@ -89,12 +90,10 @@ void Server::_bindAndListen() {
     
     // Associer le socket à l'adresse
     if (bind(_server_fd, (struct sockaddr*)&_server_addr, sizeof(_server_addr)) < 0) {
-        // CORRIGÉ: std::to_string remplacé par intToString
         throw std::runtime_error("Failed to bind to port " + intToString(_port) + ": " + std::string(strerror(errno)));
     }
     
     // Mettre le socket en mode écoute
-    // 10 = taille de la queue des connexions en attente
     if (listen(_server_fd, 10) < 0) {
         throw std::runtime_error("Failed to listen on socket: " + std::string(strerror(errno)));
     }
@@ -130,13 +129,11 @@ void Server::stop() {
 void Server::_runEventLoop() {
     while (_running) {
         // poll() surveille tous les file descriptors et attend des événements
-        // -1 = timeout infini (attendre indéfiniment)
         int poll_result = poll(&_poll_fds[0], _poll_fds.size(), -1);
         
         if (poll_result < 0) {
             if (errno == EINTR) {
-                // Interrompu par un signal (normal), continuer
-                continue;
+                continue; // Interrompu par un signal (normal), continuer
             }
             throw std::runtime_error("poll() failed: " + std::string(strerror(errno)));
         }
@@ -238,8 +235,8 @@ void Server::_handleClientData(int client_fd) {
         std::string message = client->extractMessage();
         std::cout << "Received from " << client_fd << ": " << message << std::endl;
         
-        // TODO: Parser et traiter la commande IRC
-        // parseCommand(client, message);
+        // Parser et traiter la commande IRC
+        _parseCommand(client, message);
     }
 }
 
@@ -278,3 +275,119 @@ void Server::_removeFromPoll(int fd) {
         }
     }
 }
+
+// Parser les commandes IRC reçues
+void Server::_parseCommand(Client* client, const std::string& message) {
+    if (message.empty()) {
+        return;
+    }
+    
+    std::cout << "Parsing command: '" << message << "'" << std::endl;
+    
+    // Séparer la commande des arguments
+    size_t space_pos = message.find(' ');
+    std::string command;
+    std::string args;
+    
+    if (space_pos != std::string::npos) {
+        command = message.substr(0, space_pos);
+        args = message.substr(space_pos + 1);
+    } else {
+        command = message;
+        args = "";
+    }
+    
+    // Convertir en majuscules pour la comparaison
+    for (size_t i = 0; i < command.length(); ++i) {
+        if (command[i] >= 'a' && command[i] <= 'z') {
+            command[i] = command[i] - 'a' + 'A';
+        }
+    }
+    
+    std::cout << "Command: '" << command << "', Args: '" << args << "'" << std::endl;
+    
+    // Traiter les différentes commandes
+    if (command == "PASS") {
+        AuthCommands::handlePass(this, client, args);
+    } else if (command == "NICK") {
+        AuthCommands::handleNick(this, client, args);
+    } else if (command == "USER") {
+        AuthCommands::handleUser(this, client, args);
+    } else if (command == "JOIN") {
+        ChannelCommands::handleJoin(this, client, args);
+    } else if (command == "PRIVMSG") {
+        MessageCommands::handlePrivmsg(this, client, args);
+    } else if (command == "KICK") {
+        ChannelCommands::handleKick(this, client, args);
+    } else if (command == "INVITE") {
+        ChannelCommands::handleInvite(this, client, args);
+    } else if (command == "TOPIC") {
+        ChannelCommands::handleTopic(this, client, args);
+    } else if (command == "MODE") {
+        ChannelCommands::handleMode(this, client, args);
+    } else {
+        std::cout << "Unknown command: " << command << std::endl;
+        sendResponse(client, "421 * " + command + " :Unknown command\r\n");
+    }
+}
+
+// Envoyer une réponse à un client
+void Server::sendResponse(Client* client, const std::string& response) {
+    std::cout << "Sending to client " << client->getFd() << ": " << response;
+    
+    // Ajouter la réponse au buffer d'envoi du client
+    client->appendToSendBuffer(response);
+    
+    // Essayer d'envoyer immédiatement
+    const std::string& send_buffer = client->getSendBuffer();
+    if (!send_buffer.empty()) {
+        ssize_t bytes_sent = send(client->getFd(), send_buffer.c_str(), send_buffer.length(), 0);
+        
+        if (bytes_sent > 0) {
+            client->clearSendBuffer(bytes_sent);
+            std::cout << "Sent " << bytes_sent << " bytes to client " << client->getFd() << std::endl;
+        } else if (bytes_sent < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
+            std::cerr << "Error sending to client " << client->getFd() 
+                      << ": " << strerror(errno) << std::endl;
+        }
+    }
+}
+
+// Obtenir ou créer un channel
+Channel* Server::getOrCreateChannel(const std::string& name) {
+    std::map<std::string, Channel*>::iterator it = _channels.find(name);
+    
+    if (it != _channels.end()) {
+        return it->second; // Channel existe déjà
+    }
+    
+    // Créer un nouveau channel
+    Channel* new_channel = new Channel(name);
+    _channels[name] = new_channel;
+    
+    std::cout << "Created new channel: " << name << std::endl;
+    return new_channel;
+}
+
+// Supprimer un channel vide
+void Server::removeEmptyChannel(const std::string& name) {
+    std::map<std::string, Channel*>::iterator it = _channels.find(name);
+    
+    if (it != _channels.end() && it->second->isEmpty()) {
+        delete it->second;
+        _channels.erase(it);
+        std::cout << "Removed empty channel: " << name << std::endl;
+    }
+}
+
+// Trouver un client par son nickname
+Client* Server::findClientByNickname(const std::string& nickname) {
+    // Parcourir tous les clients connectés
+    for (std::map<int, Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) {
+        Client* client = it->second;
+        if (client->getNickname() == nickname) {
+            return client;
+        }
+    }
+    return NULL; // Client non trouvé
+} 

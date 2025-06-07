@@ -40,6 +40,15 @@ void Client::setNickname(const std::string& nick) {
     _updateRegistrationStatus();
 }
 
+// Définir le username et vérifier l'état d'enregistrement
+void Client::setUsername(const std::string& user) {
+    _username = user;
+    std::cout << "Client " << _fd << " set username to: " << _username << std::endl;
+    
+    // Vérifier si maintenant complètement enregistré
+    _updateRegistrationStatus();
+}
+
 // Ajouter des données au buffer de réception
 void Client::appendToReceiveBuffer(const std::string& data) {
     _receive_buffer += data;

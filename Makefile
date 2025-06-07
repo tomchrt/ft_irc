@@ -27,15 +27,30 @@ OBJDIR = obj
 # Fichiers source
 SOURCES = main.cpp \
 		  Server.cpp \
-		  Client.cpp
+		  Client.cpp \
+		  Channel.cpp \
+		  commands/AuthCommands.cpp \
+		  commands/ChannelCommands.cpp \
+		  commands/MessageCommands.cpp
 
 # Génération des chemins complets et objets
 SRCS = $(addprefix $(SRCDIR)/, $(SOURCES))
-OBJS = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.o))
+# Créer des noms d'objets simples sans sous-dossiers
+OBJS = $(OBJDIR)/main.o \
+	   $(OBJDIR)/Server.o \
+	   $(OBJDIR)/Client.o \
+	   $(OBJDIR)/Channel.o \
+	   $(OBJDIR)/AuthCommands.o \
+	   $(OBJDIR)/ChannelCommands.o \
+	   $(OBJDIR)/MessageCommands.o
 
 # Headers dependencies (pour recompiler si un .hpp change)
 HEADERS = $(INCDIR)/Server.hpp \
-		  $(INCDIR)/Client.hpp
+		  $(INCDIR)/Client.hpp \
+		  $(INCDIR)/Channel.hpp \
+		  $(INCDIR)/commands/AuthCommands.hpp \
+		  $(INCDIR)/commands/ChannelCommands.hpp \
+		  $(INCDIR)/commands/MessageCommands.hpp
 
 # ========== RULES ========== #
 
@@ -48,8 +63,32 @@ $(NAME): $(OBJS)
 	@$(CXX) $(CXXFLAGS) -o $(NAME) $(OBJS)
 	@echo "✅ $(NAME) compiled successfully!"
 
-# Compilation des objets
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp $(HEADERS) | $(OBJDIR)
+# Compilation des objets - règles spécifiques
+$(OBJDIR)/main.o: $(SRCDIR)/main.cpp $(HEADERS) | $(OBJDIR)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
+
+$(OBJDIR)/Server.o: $(SRCDIR)/Server.cpp $(HEADERS) | $(OBJDIR)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
+
+$(OBJDIR)/Client.o: $(SRCDIR)/Client.cpp $(HEADERS) | $(OBJDIR)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
+
+$(OBJDIR)/Channel.o: $(SRCDIR)/Channel.cpp $(HEADERS) | $(OBJDIR)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
+
+$(OBJDIR)/AuthCommands.o: $(SRCDIR)/commands/AuthCommands.cpp $(HEADERS) | $(OBJDIR)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
+
+$(OBJDIR)/ChannelCommands.o: $(SRCDIR)/commands/ChannelCommands.cpp $(HEADERS) | $(OBJDIR)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
+
+$(OBJDIR)/MessageCommands.o: $(SRCDIR)/commands/MessageCommands.cpp $(HEADERS) | $(OBJDIR)
 	@echo "Compiling $<..."
 	@$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
 
