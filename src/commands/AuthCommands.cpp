@@ -33,8 +33,6 @@ void AuthCommands::handleNick(Server* server, Client* client, const std::string&
         return;
     }
     
-    // TODO: Vérifier si le nickname est déjà utilisé par un autre client
-    // TODO: Vérifier si le nickname est valide (pas de caractères interdits)
     
     std::string old_nick = client->getNickname();
     client->setNickname(args);
